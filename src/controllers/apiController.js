@@ -1,0 +1,473 @@
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { getDb } = require('../config/database');
+
+const JWT_SECRET = 'burger_secret_key_123'; // Em produção, usar variável de ambiente
+
+// --- AUTENTICAÇÃO ---
+
+exports.register = async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+        if (!name || !email || !password) {
+            return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
+        }
+
+        const db = await getDb();
+        const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+
+        if (existingUser) {
+            return res.status(400).json({ error: 'Este e-mail já está em uso.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const result = await db.run(
+            'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+            [name, email, hashedPassword]
+        );
+
+        // Auto-login after register
+        const token = jwt.sign({ id: result.lastID, name, email }, JWT_SECRET, { expiresIn: '7d' });
+        res.cookie('token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+
+        res.json({ message: 'Cadastro realizado com sucesso!', user: { id: result.lastID, name, email } });
+    } catch (error) {
+        console.error('Registration Error:', error);
+        res.status(500).json({ error: 'Erro interno no servidor ao cadastrar: ' + error.message });
+    }
+};
+
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
+        }
+
+        const db = await getDb();
+        const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Credenciais inválidas.' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Credenciais inválidas.' });
+        }
+
+        if (user.is_blocked) {
+            return res.status(403).json({ error: 'Sua conta foi desativada pelo Administrador.' });
+        }
+
+        const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+        res.cookie('token', token, { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 });
+
+        res.json({
+            message: 'Login realizado com sucesso!', user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                profile_picture: user.profile_picture
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro interno no servidor ao fazer login.' });
+    }
+};
+
+exports.logout = (req, res) => {
+    res.clearCookie('token');
+    res.json({ message: 'Logout realizado com sucesso!' });
+};
+
+// Middleware para verificar token
+exports.authMiddleware = (req, res, next) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: 'Não autorizado.' });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.clearCookie('token');
+        return res.status(401).json({ error: 'Token inválido ou expirado.' });
+    }
+};
+
+// Middleware para administradores
+exports.adminMiddleware = (req, res, next) => {
+    const token = req.cookies.token;
+    if (!token) return res.redirect('/login');
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded.email !== 'ADM2026@gmail.com') {
+            return res.redirect('/');
+        }
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.clearCookie('token');
+        return res.redirect('/login');
+    }
+};
+
+// --- ADMIN API ---
+exports.getAdminDashboard = async (req, res) => {
+    try {
+        const db = await getDb();
+        const orders = await db.all('SELECT * FROM orders');
+        const usersCount = (await db.get('SELECT COUNT(*) as c FROM users')).c;
+        
+        let totalSales = 0;
+        let onlineOrders = 0;
+        orders.forEach(o => {
+            totalSales += o.total;
+            if (o.status !== 'Cancelado') onlineOrders++;
+        });
+
+        res.json({
+            vendas: totalSales,
+            mediaPedidos: onlineOrders > 0 ? (totalSales / onlineOrders) : 0,
+            clientesAtivos: usersCount,
+            entregasAndamento: orders.filter(o => o.status === 'Em Preparo' || o.status === 'Em trânsito').length
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar dashboard.' });
+    }
+};
+
+exports.getAdminUsers = async (req, res) => {
+    try {
+        const db = await getDb();
+        const users = await db.all('SELECT id, name, email, is_blocked as blocked, last_active FROM users ORDER BY created_at DESC');
+        
+        // Define active status if user pinged in last 5 minutes
+        const activeThreshold = new Date(Date.now() - 5 * 60000); 
+
+        const parsedUsers = users.map(u => {
+            let online = false;
+            if (u.last_active) {
+                const lp = new Date(u.last_active);
+                if (lp > activeThreshold) online = true;
+            }
+            return { ...u, online };
+        });
+
+        res.json(parsedUsers);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar usuários.' });
+    }
+};
+
+exports.getAdminUserDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const db = await getDb();
+        
+        // User basics
+        const user = await db.get('SELECT id, name, email, address, is_blocked as blocked, last_active FROM users WHERE id = ?', [id]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        let online = false;
+        if (user.last_active && new Date(user.last_active) > new Date(Date.now() - 5 * 60000)) online = true;
+        user.online = online;
+
+        // Tenta pegar o último endereço usado em uma compra caso o endereço principal não exista
+        if (!user.address) {
+            const lastOrder = await db.get('SELECT address FROM orders WHERE user_id = ? AND address IS NOT NULL ORDER BY created_at DESC LIMIT 1', [id]);
+            if (lastOrder) {
+                user.address = lastOrder.address;
+            }
+        }
+
+        // Historico de Compras
+        const orders = await db.all('SELECT id, status, total, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC', [id]);
+
+        // Itens no carrinho (na versão atual as compras simulam mas podemos buscar os itens dos orders recentes para "carrinho" se formos considerar session db. O sql tinha cart_items)
+        const cartItems = await db.all('SELECT c.quantity, p.name FROM cart_items c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?', [id]);
+
+        // Itens mais comprados
+        const frequentItems = await db.all(`
+            SELECT p.name, SUM(oi.quantity) as count 
+            FROM order_items oi 
+            JOIN orders o ON oi.order_id = o.id 
+            JOIN products p ON oi.product_id = p.id 
+            WHERE o.user_id = ? 
+            GROUP BY p.id 
+            ORDER BY count DESC LIMIT 3
+        `, [id]);
+
+        res.json({ user, orders, cartItems, frequentItems });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao carregar detalhes do usuário.' });
+    }
+};
+
+exports.blockUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { adminPassword } = req.body;
+
+        // Verify admin password
+        const db = await getDb();
+        const adminUser = await db.get('SELECT password FROM users WHERE email = ?', ['ADM2026@gmail.com']);
+        if (!adminUser) return res.status(401).json({ error: 'Admin root não encontrado.' });
+
+        const isMatch = await bcrypt.compare(adminPassword, adminUser.password);
+        if (!isMatch) return res.status(401).json({ error: 'Senha de administrador incorreta.' });
+
+        const targetUser = await db.get('SELECT is_blocked FROM users WHERE id = ?', [id]);
+        if (!targetUser) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+        const newStatus = targetUser.is_blocked ? 0 : 1;
+        await db.run('UPDATE users SET is_blocked = ? WHERE id = ?', [newStatus, id]);
+
+        res.json({ message: newStatus ? 'Usuário bloqueado com sucesso.' : 'Usuário desbloqueado com sucesso.', is_blocked: newStatus });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao alterar status da conta.' });
+    }
+};
+
+exports.getAllOrders = async (req, res) => {
+    try {
+        const db = await getDb();
+        const orders = await db.all(`
+            SELECT o.id, o.status, o.total, o.created_at, u.name as client_name 
+            FROM orders o JOIN users u ON o.user_id = u.id ORDER BY o.created_at DESC
+        `);
+        res.json(orders);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar pedidos.' });
+    }
+};
+
+// --- PERFIL ---
+
+exports.getProfile = async (req, res) => {
+    try {
+        const db = await getDb();
+        const user = await db.get('SELECT id, name, email, phone, profile_picture, address FROM users WHERE id = ?', [req.user.id]);
+        if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+        res.json(user);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao carregar perfil.' });
+    }
+};
+
+exports.updateProfile = async (req, res) => {
+    try {
+        const { name, email, phone, address } = req.body;
+        if (!name || !email) {
+            return res.status(400).json({ error: 'Nome e email são obrigatórios.' });
+        }
+
+        const db = await getDb();
+
+        // Verifica se o e-mail não foi pego por outra pessoa
+        const existingUser = await db.get('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
+        if (existingUser) return res.status(400).json({ error: 'Este e-mail já está em uso.' });
+
+        await db.run(
+            'UPDATE users SET name = ?, email = ?, phone = ?, address = ? WHERE id = ?',
+            [name, email, phone || null, address || null, req.user.id]
+        );
+
+        res.json({ message: 'Perfil atualizado com sucesso!' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao atualizar perfil.' });
+    }
+};
+
+// --- CARRINHO E COMPRAS ---
+
+exports.saveOrder = async (req, res) => {
+    try {
+        const { items, address } = req.body; // Array de { id, quantity, price } e endereço
+        if (!items || items.length === 0) {
+            return res.status(400).json({ error: 'Carrinho vazio.' });
+        }
+
+        const db = await getDb();
+        const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+        // Inicia a compra
+        const result = await db.run(
+            'INSERT INTO orders (user_id, total, status, address) VALUES (?, ?, ?, ?)',
+            [req.user.id, total, 'Aprovado', address || null] // Simulando já aprovado
+        );
+        const orderId = result.lastID;
+
+        for (const item of items) {
+            await db.run(
+                'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
+                [orderId, item.id, item.quantity, item.price]
+            );
+        }
+
+        res.json({ message: 'Pedido finalizado com sucesso!', orderId });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao salvar pedido.' });
+    }
+};
+
+exports.getOrders = async (req, res) => {
+    try {
+        const db = await getDb();
+        const orders = await db.all('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
+        res.json(orders);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao buscar pedidos.' });
+    }
+};
+
+// --- PRODUTOS E RECOMENDAÇÕES ---
+
+exports.getProducts = async (req, res) => {
+    try {
+        const db = await getDb();
+        const products = await db.all('SELECT * FROM products ORDER BY created_at DESC');
+        res.json(products);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao buscar produtos.' });
+    }
+};
+
+exports.createProduct = async (req, res) => {
+    try {
+        const { name, description, price, image, category, status } = req.body;
+        if (!name || !price) {
+            return res.status(400).json({ error: 'Nome e preço são obrigatórios.' });
+        }
+
+        const db = await getDb();
+        const result = await db.run(
+            'INSERT INTO products (name, description, price, image, category, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, description || null, price, image || null, category || null, status || 'Disponível']
+        );
+
+        res.json({ message: 'Produto criado com sucesso!', id: result.lastID });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao criar produto.' });
+    }
+};
+
+exports.updateProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description, price, image, category, status } = req.body;
+
+        const db = await getDb();
+        await db.run(
+            'UPDATE products SET name = ?, description = ?, price = ?, image = ?, category = ?, status = ? WHERE id = ?',
+            [name, description || null, price, image || null, category || null, status || 'Disponível', id]
+        );
+
+        res.json({ message: 'Produto atualizado com sucesso!' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao atualizar produto.' });
+    }
+};
+
+exports.deleteProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const db = await getDb();
+        await db.run('DELETE FROM products WHERE id = ?', [id]);
+        res.json({ message: 'Produto removido com sucesso!' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao remover produto.' });
+    }
+};
+
+exports.getRecommendations = async (req, res) => {
+    try {
+        const db = await getDb();
+
+        // Retorna últimos itens comprados
+        const lastPurchased = await db.all(`
+            SELECT DISTINCT p.* 
+            FROM products p
+            JOIN order_items oi ON p.id = oi.product_id
+            JOIN orders o ON oi.order_id = o.id
+            WHERE o.user_id = ?
+            ORDER BY o.created_at DESC
+            LIMIT 3
+        `, [req.user.id]);
+
+        // Retorna mais comprados no geral do restaurante (se o usuário não tiver compras, isso serve)
+        const mostPopular = await db.all(`
+            SELECT p.*, SUM(oi.quantity) as total_sold
+            FROM products p
+            JOIN order_items oi ON p.id = oi.product_id
+            GROUP BY p.id
+            ORDER BY total_sold DESC
+            LIMIT 3
+        `);
+
+        res.json({ lastPurchased, mostPopular });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao gerar recomendações.' });
+    }
+};
+
+// Verifica Status de Login (para frontend)
+exports.checkAuth = async (req, res) => {
+    const token = req.cookies.token;
+    if (!token) return res.json({ isLoggedIn: false });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const db = await getDb();
+        const user = await db.get('SELECT id, name, email, profile_picture, address, is_blocked FROM users WHERE id = ?', [decoded.id]);
+
+        if (user) {
+            if (user.is_blocked) {
+                res.clearCookie('token');
+                return res.json({ isLoggedIn: false, error: 'BLOCKED' });
+            }
+            // Atualiza last_active para mostrar online
+            await db.run('UPDATE users SET last_active = datetime("now", "localtime") WHERE id = ?', [decoded.id]);
+            res.json({ isLoggedIn: true, user: user });
+        } else {
+            res.json({ isLoggedIn: false });
+        }
+    } catch (error) {
+        res.json({ isLoggedIn: false });
+    }
+};
+
+exports.updateProfilePicture = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+        }
+
+        const userId = req.user.id;
+        const profilePicturePath = `/uploads/${req.file.filename}`;
+
+        const db = await getDb();
+        await db.run('UPDATE users SET profile_picture = ? WHERE id = ?', [profilePicturePath, userId]);
+
+        res.json({
+            message: 'Foto de perfil atualizada com sucesso!',
+            profile_picture: profilePicturePath
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Erro ao atualizar foto de perfil.' });
+    }
+};
