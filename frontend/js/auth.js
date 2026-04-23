@@ -13,7 +13,7 @@ const Auth = {
             Auth.isLoggedInState = data.isLoggedIn;
             Auth.user = data.user || null;
             if (data.error === 'BLOCKED') {
-                alert('Sua conta foi desativada pelo Administrador.');
+                await window.UI.alert('Sua conta foi desativada pelo Administrador.', 'Aviso de Segurança');
                 Auth.isLoggedInState = false;
             }
         } catch (e) {
@@ -36,10 +36,10 @@ const Auth = {
             if (res.ok) {
                 window.location.href = '/';
             } else {
-                alert(data.error || 'Erro ao efetuar login');
+                window.UI.toast(data.error || 'Erro ao efetuar login', 'error');
             }
         } catch (error) {
-            alert('Erro na conexão com o servidor.');
+            window.UI.toast('Erro na conexão com o servidor.', 'error');
         }
     },
 
@@ -54,10 +54,10 @@ const Auth = {
             if (res.ok) {
                 window.location.href = '/';
             } else {
-                alert(data.error || 'Erro ao efetuar cadastro');
+                window.UI.toast(data.error || 'Erro ao efetuar cadastro', 'error');
             }
         } catch (error) {
-            alert('Erro na conexão com o servidor.');
+            window.UI.toast('Erro na conexão com o servidor.', 'error');
         }
     },
 
@@ -66,7 +66,7 @@ const Auth = {
             await fetch('/api/auth/logout', { method: 'POST' });
             window.location.href = '/';
         } catch (error) {
-            alert('Erro ao sair da conta');
+            window.UI.toast('Erro ao sair da conta', 'error');
         }
     },
 

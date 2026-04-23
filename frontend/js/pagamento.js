@@ -56,7 +56,7 @@ document.addEventListener('authLoaded', async () => {
             // Optional: Update user object in Auth state for this session
             user.address = newAddress;
         } else {
-            alert('Por favor, informe um endereço.');
+            window.UI.toast('Por favor, informe um endereço.', 'error');
         }
     });
 });
@@ -82,7 +82,7 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
     e.preventDefault();
     const address = document.getElementById('current-address').textContent;
     if (address.includes('Nenhum endereço')) {
-        alert('Por favor, confirme seu endereço de entrega.');
+        window.UI.toast('Por favor, confirme seu endereço de entrega.', 'error');
         return;
     }
 
@@ -95,14 +95,15 @@ document.getElementById('payment-form').addEventListener('submit', async (e) => 
         });
 
         if (res.ok) {
-            Cart.clear();
-            alert('Pedido finalizado com sucesso! Seu Burger chegará em instantes.');
+            if (Cart.clear) Cart.clear();
+            else localStorage.removeItem('burger_cart');
+            await window.UI.alert('Pedido finalizado com sucesso! Seu Burger chegará em instantes.');
             window.location.href = '/';
         } else {
             const data = await res.json();
-            alert('Erro ao processar pedido: ' + data.error);
+            window.UI.toast('Erro ao processar pedido: ' + data.error, 'error');
         }
     } catch (err) {
-        alert('Erro de conexão ao processar pedido.');
+        window.UI.toast('Erro de conexão ao processar pedido.', 'error');
     }
 });

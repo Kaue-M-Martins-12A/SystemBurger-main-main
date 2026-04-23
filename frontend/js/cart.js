@@ -1,6 +1,14 @@
 // Shopping cart management
 const Cart = {
-    getItems: () => JSON.parse(localStorage.getItem('burger_cart') || '[]'),
+    getItems: () => {
+        const items = JSON.parse(localStorage.getItem('burger_cart') || '[]');
+        // Limpeza de segurança: remove itens com IDs inválidos (lixo de versões anteriores)
+        const cleanItems = items.filter(item => !isNaN(parseInt(item.id)));
+        if (cleanItems.length !== items.length) {
+            localStorage.setItem('burger_cart', JSON.stringify(cleanItems));
+        }
+        return cleanItems;
+    },
 
     saveItems: (items) => {
         localStorage.setItem('burger_cart', JSON.stringify(items));
@@ -16,7 +24,7 @@ const Cart = {
             items.push({ ...product, quantity: 1 });
         }
         Cart.saveItems(items);
-        alert(`${product.name} adicionado ao carrinho!`);
+        window.UI.toast(`${product.name} adicionado ao carrinho!`, 'success');
     },
 
     removeItem: (productId) => {
@@ -53,14 +61,14 @@ const Cart = {
 
     checkout: async () => {
         if (!Auth.isLoggedIn()) {
-            alert('Você precisa estar logado para finalizar a compra!');
+            await window.UI.alert('Você precisa estar logado para finalizar a compra!');
             window.location.href = '/login';
             return;
         }
 
         const items = Cart.getItems();
         if (items.length === 0) {
-            alert('Seu carrinho está vazio.');
+            window.UI.toast('Seu carrinho está vazio.', 'error');
             return;
         }
 
@@ -73,14 +81,14 @@ const Cart = {
 
             const data = await res.json();
             if (res.ok) {
-                alert('Pedido finalizado com sucesso!');
+                await window.UI.alert('Pedido finalizado com sucesso!');
                 localStorage.removeItem('burger_cart');
                 window.location.href = '/perfil';
             } else {
-                alert(data.error || 'Erro ao finalizar pedido.');
+                window.UI.toast(data.error || 'Erro ao finalizar pedido.', 'error');
             }
         } catch (error) {
-            alert('Erro de conexão ao finalizar pedido.');
+            window.UI.toast('Erro de conexão ao finalizar pedido.', 'error');
         }
     }
 };

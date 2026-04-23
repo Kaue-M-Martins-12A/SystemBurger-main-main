@@ -61,13 +61,13 @@ async function viewUser(id) {
 
         document.getElementById('user-overlay').style.display = 'flex';
     } catch(e) {
-        alert('Erro ao carregar.');
+        window.UI.toast('Erro ao carregar os dados do usuário.', 'error');
     }
 }
 
 async function promptBlockUser() {
     if (!currentViewUserId) return;
-    const password = prompt('Informe a SENHA DE ADMINISTRADOR:');
+    const password = await window.UI.prompt('Informe a SENHA DE ADMINISTRADOR para bloquear/desbloquear o usuário:', 'Autorização Pendente');
     if (!password) return;
 
     try {
@@ -78,14 +78,14 @@ async function promptBlockUser() {
         });
         const data = await res.json();
         if (res.ok) {
-            alert(data.message);
+            window.UI.toast(data.message, 'success');
             viewUser(currentViewUserId); // Recarregar modal
             loadUsers(); // Recarregar tabela
         } else {
-            alert('Erro: ' + data.error);
+            window.UI.toast('Erro: ' + data.error, 'error');
         }
     } catch(e) {
-        alert('Falha');
+        window.UI.toast('Falha ao conectar com o servidor.', 'error');
     }
 }
 

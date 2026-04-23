@@ -32,24 +32,25 @@ const Product = {
 
     // Attach click events to product cards
     init: () => {
-        const cards = document.querySelectorAll('.product-card');
+        // Seleciona cards que NÃO foram gerados dinamicamente com onclick
+        const cards = document.querySelectorAll('.product-card:not([onclick])');
         cards.forEach(card => {
             card.style.cursor = 'pointer';
             card.addEventListener('click', (e) => {
-                // Prevent modal if clicking specifically an "Add" button if it exists
                 if (e.target.tagName === 'BUTTON') return;
 
                 const name = card.querySelector('.product-name').textContent;
                 const image = card.querySelector('img').src;
                 const desc = card.querySelector('.product-desc').textContent;
-
-                // Simulate id and price from content
+                
+                // Tenta pegar ID e Preço do dataset (se houver) ou usa fallback
+                // Usando IDs numéricos para não quebrar o banco de dados
                 const product = {
-                    id: btoa(name).substring(0, 8),
+                    id: parseInt(card.dataset.id) || 1, 
                     name: name,
                     image: image,
                     description: desc,
-                    price: 25.00 // Default price as mock
+                    price: parseFloat(card.dataset.price) || 25.00
                 };
                 Product.showDetails(product);
             });

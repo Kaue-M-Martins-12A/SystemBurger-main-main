@@ -31,7 +31,14 @@
                 <div class="header-content">
                     <div>
                         <h1>Dashboard Geral</h1>
-                        <p class="text-muted">Visão geral dos principais indicadores de desempenho (KPIs) para o seu negócio.</p>
+                        <p class="text-muted">Visão geral dos principais indicadores de desempenho (KPIs).</p>
+                    </div>
+                    <div class="header-filters">
+                        <select id="range-selector" class="admin-select" onchange="Admin.fetchDashboard(this.value)">
+                            <option value="week">Esta Semana (7 dias)</option>
+                            <option value="month">Este Mês (30 dias)</option>
+                            <option value="year">Este Ano (12 meses)</option>
+                        </select>
                     </div>
                 </div>
             </header>
@@ -55,10 +62,26 @@
             </div>
             
             <div class="charts-area">
-                <div class="chart-container" style="background:#fff; padding:20px; border-radius:12px; margin-top:30px;">
-                    <h3>Vendas por Período</h3>
-                    <h2 id="kpi-vendas-totais">R$ 0,00</h2>
-                    <canvas id="salesChart" height="80"></canvas>
+                <div class="chart-row">
+                    <div class="chart-container main-chart">
+                        <div class="chart-header">
+                            <h3>Vendas por Período</h3>
+                            <h2 id="kpi-vendas-totais">R$ 0,00</h2>
+                        </div>
+                        <canvas id="salesChart"></canvas>
+                    </div>
+                    
+                    <div class="chart-container side-chart">
+                        <h3>Itens Mais Vendidos</h3>
+                        <canvas id="pieChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="niche-area">
+                    <h3 style="margin-bottom: 20px;">Líderes por Categoria</h3>
+                    <div class="niche-grid" id="niche-grid">
+                        <!-- Categorias dinâmicas -->
+                    </div>
                 </div>
             </div>
         </section>

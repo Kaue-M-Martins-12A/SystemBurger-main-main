@@ -70,5 +70,6 @@ router.get('/api/admin/orders', apiController.adminMiddleware, apiController.get
 router.get('/api/admin/users', apiController.adminMiddleware, apiController.getAdminUsers);
 router.get('/api/admin/users/:id', apiController.adminMiddleware, apiController.getAdminUserDetails);
 router.post('/api/admin/users/:id/block', apiController.adminMiddleware, apiController.blockUser);
+router.get('/api/admin/seed', apiController.adminMiddleware, apiController.seedDashboard);
 
 module.exports = router;

@@ -66,15 +66,17 @@ function editProduct(id) {
 }
 
 async function removeProduct(id) {
-    if(!confirm('Tem certeza que deseja remover este produto?')) return;
+    const isConfirmed = await window.UI.confirm('Tem certeza que deseja remover este produto?', 'Atenção');
+    if(!isConfirmed) return;
     try {
         const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
         if(res.ok) {
+            window.UI.toast('Produto removido com sucesso!', 'success');
             loadProducts();
         } else {
-            alert('Erro ao remover produto.');
+            window.UI.toast('Erro ao remover produto.', 'error');
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); window.UI.toast('Falha na conexão.', 'error'); }
 }
 
 async function saveProduct(event) {
@@ -101,14 +103,16 @@ async function saveProduct(event) {
         });
 
         if (response.ok) {
+            window.UI.toast('Produto salvo com sucesso!', 'success');
             resetForm();
             loadProducts();
         } else {
             const data = await response.json();
-            alert('Erro: ' + (data.error || 'Falha ao salvar.'));
+            window.UI.toast('Erro: ' + (data.error || 'Falha ao salvar.'), 'error');
         }
     } catch (error) {
         console.error('Save error:', error);
+        window.UI.toast('Erro ao salvar produto.', 'error');
     }
 }
 

@@ -3,6 +3,122 @@
  * Handles dynamic rendering of Header and Footer
  */
 
+window.UI = {
+    _overlay: null,
+    _toastContainer: null,
+
+    init: function() {
+        this._overlay = document.createElement('div');
+        this._overlay.className = 'ui-overlay';
+        this._overlay.innerHTML = '<div class="ui-modal" id="ui-modal-box"></div>';
+        document.body.appendChild(this._overlay);
+
+        this._toastContainer = document.createElement('div');
+        this._toastContainer.className = 'ui-toast-container';
+        document.body.appendChild(this._toastContainer);
+    },
+
+    showModal: function(opts) {
+        return new Promise((resolve) => {
+            if (!this._overlay) this.init();
+            const box = document.getElementById('ui-modal-box');
+            
+            let html = '';
+            if (opts.title) html += `<h3>${opts.title}</h3>`;
+            if (opts.text) html += `<p>${opts.text}</p>`;
+            if (opts.type === 'prompt') {
+                html += `<input type="text" id="ui-prompt-input" autocomplete="off" />`;
+            }
+            
+            html += '<div class="ui-buttons">';
+            if (opts.showCancel) {
+                html += `<button class="ui-btn ui-btn-secondary" id="ui-btn-cancel">Cancelar</button>`;
+            }
+            html += `<button class="ui-btn ui-btn-primary" id="ui-btn-confirm">OK</button>`;
+            html += '</div>';
+
+            box.innerHTML = html;
+
+            const close = (val) => {
+                this._overlay.classList.remove('show');
+                setTimeout(() => { resolve(val); }, 300);
+            };
+
+
+            // Force reflow
+            void this._overlay.offsetWidth;
+            this._overlay.classList.add('show');
+
+            document.getElementById('ui-btn-confirm').onclick = () => {
+                if (opts.type === 'prompt') {
+                    close(document.getElementById('ui-prompt-input').value);
+                } else {
+                    close(true);
+                }
+            };
+
+            if (opts.showCancel) {
+                document.getElementById('ui-btn-cancel').onclick = () => close(false);
+            }
+
+            if (opts.type === 'prompt') {
+                document.getElementById('ui-prompt-input').focus();
+            }
+        });
+    },
+
+    alert: function(text, title = 'Aviso') {
+        return this.showModal({ title, text, type: 'alert', showCancel: false });
+    },
+
+    confirm: function(text, title = 'Confirmação') {
+        return this.showModal({ title, text, type: 'confirm', showCancel: true });
+    },
+
+    prompt: function(text, title = 'Entrada') {
+        return this.showModal({ title, text, type: 'prompt', showCancel: true });
+    },
+
+    toast: function(text, type = 'info') {
+        if (!this._toastContainer) this.init();
+        const toast = document.createElement('div');
+        toast.className = `ui-toast ${type}`;
+        
+        let icon = type === 'success' ? '✓' : (type === 'error' ? '✕' : 'ℹ');
+        toast.innerHTML = `<span style="font-weight:bold; font-size:1.2rem">${icon}</span> <span>${text}</span>`;
+        
+        this._toastContainer.appendChild(toast);
+        
+        // Reflow
+        void toast.offsetWidth;
+        toast.classList.add('show');
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+};
+
+// Override globais para fallback (podem não bloquear a execução se não usar await)
+window._originalAlert = window.alert;
+window.alert = (msg) => {
+    window.UI.toast(msg, msg && msg.toLowerCase().includes('erro') ? 'error' : 'info');
+};
+window.confirm = (msg) => {
+    // Síncrona não pode ser bloqueada facilmente por custom UI.
+    // Vamos lançar o alert original como fallback ou usar o async
+    console.warn('Uso de window.confirm síncrono. Use await window.UI.confirm()');
+    return window._originalConfirm ? window._originalConfirm(msg) : true;
+};
+window._originalConfirm = window.confirm;
+window._originalPrompt = window.prompt;
+window.prompt = (msg) => {
+    console.warn('Uso de window.prompt síncrono. Use await window.UI.prompt()');
+    return window._originalPrompt ? window._originalPrompt(msg) : '';
+};
+
+
 const Components = {
     renderHeader: function() {
         const header = document.getElementById('main-header');

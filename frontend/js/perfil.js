@@ -48,7 +48,7 @@ document.addEventListener('authLoaded', async () => {
                 });
                 const photoData = await resPhoto.json();
                 if (!resPhoto.ok) {
-                    alert('Erro ao carregar foto: ' + (photoData.error || 'Erro desconhecido'));
+                    window.UI.toast('Erro ao carregar foto: ' + (photoData.error || 'Erro desconhecido'), 'error');
                 } else {
                     // Update preview and auth state
                     document.getElementById('prof-img-preview').src = photoData.profile_picture;
@@ -78,11 +78,11 @@ document.addEventListener('authLoaded', async () => {
                 throw new Error("Resposta do servidor não é JSON: " + text.substring(0, 50));
             }
 
-            if (res.ok) alert('Perfil atualizado com sucesso!');
-            else alert(data.error || 'Erro ao atualizar.');
+            if (res.ok) window.UI.toast('Perfil atualizado com sucesso!', 'success');
+            else window.UI.toast(data.error || 'Erro ao atualizar.', 'error');
         } catch (err) {
             console.error('Update error:', err);
-            alert('Erro ao atualizar perfil: ' + (err.message || 'Erro de conexão ao servidor.'));
+            window.UI.toast('Erro ao atualizar perfil: ' + (err.message || 'Erro de conexão ao servidor.'), 'error');
         }
         btn.disabled = false;
         btn.textContent = 'Salvar Alterações';

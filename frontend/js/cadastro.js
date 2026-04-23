@@ -6,7 +6,7 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
     const confirm = document.getElementById('reg-confirm').value;
 
     if (password !== confirm) {
-        alert('As senhas não coincidem!');
+        window.UI.toast('As senhas não coincidem!', 'error');
         return;
     }
 
